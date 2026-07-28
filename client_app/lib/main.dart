@@ -21,6 +21,7 @@ import 'package:quiz_app/services/hive_storage_service.dart';
 import 'package:quiz_app/services/api_client.dart';
 import 'package:quiz_app/services/ai_service.dart';
 import 'package:quiz_app/services/push_notification_service.dart';
+import 'package:quiz_app/theme/app_theme.dart';
 
 import 'app_route.dart';
 import 'providers/quiz_provider.dart';
@@ -111,25 +112,8 @@ class QuizApp extends StatelessWidget {
       child: MaterialApp.router(
         title: 'Flutter Demo',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-          textTheme: TextTheme(
-            titleSmall: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          floatingActionButtonTheme: FloatingActionButtonThemeData(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          appBarTheme: AppBarTheme(centerTitle: false),
-          outlinedButtonTheme: OutlinedButtonThemeData(
-            style: OutlinedButton.styleFrom(
-              minimumSize: Size(double.infinity, 48),
-            ),
-          ),
-          useMaterial3: true,
-        ),
-        darkTheme: ThemeData.dark(useMaterial3: true),
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
         themeMode: ThemeMode.light,
         routerConfig: AppRoute.routes,
       ),

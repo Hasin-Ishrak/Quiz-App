@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/subscription_provider.dart';
+import '../app_route.dart';
 import 'package:go_router/go_router.dart';
 
 class SubscriptionPage extends StatefulWidget {
@@ -15,6 +16,22 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   final _otpController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<SubscriptionProvider>();
+      if (provider.phoneNumber.isNotEmpty &&
+          !provider.hasCheckedStatus &&
+          !provider.isLoading) {
+        provider.checkSubscriptionStatus();
+      }
+      if (provider.phoneNumber.isNotEmpty) {
+        _phoneController.text = provider.phoneNumber;
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _phoneController.dispose();
     _otpController.dispose();
@@ -26,14 +43,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     final provider = context.watch<SubscriptionProvider>();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Subscribe'),
-      ),
+      appBar: AppBar(title: const Text('Subscribe')),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
-        child: Center(
-          child: _buildBody(provider),
-        ),
+        child: Center(child: _buildBody(provider)),
       ),
     );
   }
@@ -56,10 +69,15 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
           const SizedBox(height: 32),
           ElevatedButton(
             onPressed: () {
-              context.go('/');
+              context.go(AppRoute.home);
             },
             child: const Text('Go to Home'),
-          )
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () => context.push(AppRoute.unsubscribe),
+            child: const Text('Unsubscribe'),
+          ),
         ],
       );
     }
@@ -78,13 +96,36 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
               style: TextStyle(color: Colors.red.shade900),
             ),
           ),
-        if (provider.state == SubscriptionState.inputPhone || provider.state == SubscriptionState.error) ...[
+        if (provider.state == SubscriptionState.inputPhone ||
+            provider.state == SubscriptionState.error) ...[
           const Text(
-            'Enter your mobile number to subscribe',
+            'Enter your mobile number to subscribe or check status',
             style: TextStyle(fontSize: 18),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          if (provider.hasCheckedStatus)
+            Container(
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: provider.isSubscribed
+                    ? Colors.green.shade50
+                    : Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                provider.isSubscribed
+                    ? 'Current status: subscribed'
+                    : 'Current status: not subscribed',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: provider.isSubscribed
+                      ? Colors.green.shade800
+                      : Colors.orange.shade800,
+                ),
+              ),
+            ),
           TextField(
             controller: _phoneController,
             decoration: const InputDecoration(
@@ -95,17 +136,41 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
             ),
             keyboardType: TextInputType.phone,
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           ElevatedButton(
             onPressed: () {
-              if (_phoneController.text.isNotEmpty) {
-                provider.sendOtp(_phoneController.text);
+              final phone = _phoneController.text.trim();
+              if (phone.isNotEmpty) {
+                provider.sendOtp(phone);
               }
             },
             child: const Padding(
               padding: EdgeInsets.all(16.0),
               child: Text('Send OTP', style: TextStyle(fontSize: 16)),
             ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    final phone = _phoneController.text.trim();
+                    if (phone.isNotEmpty) {
+                      provider.checkSubscriptionStatus(phone);
+                    }
+                  },
+                  child: const Text('Check Status'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => context.push(AppRoute.unsubscribe),
+                  child: const Text('Unsubscribe'),
+                ),
+              ),
+            ],
           ),
         ],
         if (provider.state == SubscriptionState.inputOtp) ...[
@@ -139,7 +204,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
           TextButton(
             onPressed: () => provider.reset(),
             child: const Text('Change Phone Number'),
-          )
+          ),
         ],
       ],
     );

@@ -73,7 +73,7 @@ class _ProfileHeaderDelegate extends SliverPersistentHeaderDelegate {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Container(color: const Color(0xFF6B58E9)),
+        Container(color: Theme.of(context).colorScheme.primary),
         Positioned(
           top: safeAreaTop,
           left: 0,
@@ -228,7 +228,6 @@ class _ProfilePageState extends State<ProfilePage> {
     final profile = profileProvider.userProfile;
 
     return Scaffold(
-      // backgroundColor: const Color(0xFF6B58E9),
       body: CustomScrollView(
         slivers: [
           SliverPersistentHeader(
@@ -294,7 +293,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF6B58E9),
+                        color: Theme.of(context).colorScheme.primary,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
@@ -348,17 +347,18 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                         Column(
                           children: [
-                            const Text(
+                            Text(
                               'Details',
                               style: TextStyle(
-                                color: Color(0xFF6B58E9),
+                                color: Theme.of(context).colorScheme.primary,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             const SizedBox(height: 4),
-                            const CircleAvatar(
+                            CircleAvatar(
                               radius: 3,
-                              backgroundColor: Color(0xFF6B58E9),
+                              backgroundColor:
+                                  Theme.of(context).colorScheme.primary,
                             ),
                           ],
                         ),
@@ -500,7 +500,7 @@ class _ProfilePageState extends State<ProfilePage> {
             HapticFeedback.lightImpact();
             context.push(AppRoute.ai);
           },
-          child: const Icon(Icons.bolt, color: Color(0xFF6B58E9)),
+          child: Icon(Icons.bolt, color: Theme.of(context).colorScheme.primary),
         ),
       ),
     );

@@ -14,6 +14,7 @@ import 'pages/quiz_loading_page.dart';
 import 'pages/quiz_management_page.dart';
 import 'pages/quiz_question_page.dart';
 import 'pages/subscription_page.dart';
+import 'pages/unsubscribe_page.dart';
 import 'utils/go_route_refresh_stream.dart';
 
 class AppRoute {
@@ -28,6 +29,7 @@ class AppRoute {
   static const String profile = '/profile';
   static const String ai = '/ai-interaction';
   static const String subscription = '/subscription';
+  static const String unsubscribe = '/unsubscribe';
 
   static final routes = GoRouter(
     initialLocation: login,
@@ -82,6 +84,10 @@ class AppRoute {
       GoRoute(
         path: AppRoute.subscription,
         builder: (context, state) => SubscriptionPage(),
+      ),
+      GoRoute(
+        path: AppRoute.unsubscribe,
+        builder: (context, state) => const UnsubscribePage(),
       ),
     ],
   );
