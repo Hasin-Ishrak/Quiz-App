@@ -40,6 +40,10 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            
+            // FIXED: Correct Kotlin DSL syntax for disabling R8 minification
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
@@ -50,4 +54,17 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+}
+subprojects {
+    afterEvaluate {
+        if (hasProperty("android")) {
+            extensions.findByType(com.android.build.gradle.BaseExtension::class.java)?.apply {
+                compileSdkVersion(34)
+                buildToolsVersion("34.0.0")
+                defaultConfig {
+                    targetSdkVersion(34)
+                }
+            }
+        }
+    }
 }
