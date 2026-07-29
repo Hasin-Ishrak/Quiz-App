@@ -1,0 +1,154 @@
+name: Android Release
+
+# Builds signed-for-testing artifacts and publishes them as a GitHub Release.
+#
+# IMPORTANT - these artifacts are NOT Play Store ready.
+# client_app/android/app/build.gradle.kts still has:
+#
+#     release { signingConfig = signingConfigs.getByName("debug") }
+#
+# so the release build is signed with the debug keystore. It installs and runs
+# fine for sideloading and QA, but Google Play will reject it. To ship for real,
+# add a proper signing config backed by the repository secrets listed below and
+# delete this notice.
+#
+# Trigger by pushing a tag:      git tag v1.0.0 && git push origin v1.0.0
+# or from the Actions tab:       Run workflow -> enter a version
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to publish, e.g. v1.0.0"
+        required: true
+      prerelease:
+        description: "Mark this release as a pre-release"
+        type: boolean
+        required: false
+        default: true
+      flutter_version:
+        description: "Exact Flutter version (leave blank for latest stable)"
+        required: false
+        default: ""
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # required to create the release and upload assets
+
+defaults:
+  run:
+    working-directory: client_app
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        working-directory: .
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${VERSION}"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ github.event.inputs.flutter_version }}
+          cache: true
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('client_app/android/**/*.gradle*', 'client_app/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Print toolchain versions
+        run: |
+          flutter --version
+          java -version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      # Universal APK for sideloading, per-ABI APKs to cut download size,
+      # and an App Bundle for the Play Store track once real signing is set up.
+      - name: Build universal APK
+        run: flutter build apk --release
+
+      - name: Build per-ABI APKs
+        run: flutter build apk --release --split-per-abi
+
+      - name: Build App Bundle
+        run: flutter build appbundle --release
+
+      - name: Stage artifacts
+        id: stage
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p ../dist
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             "../dist/quiz-app-${VERSION}-universal.apk"
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            src="build/app/outputs/flutter-apk/app-${abi}-release.apk"
+            [ -f "$src" ] && cp "$src" "../dist/quiz-app-${VERSION}-${abi}.apk"
+          done
+          cp build/app/outputs/bundle/release/app-release.aab \
+             "../dist/quiz-app-${VERSION}.aab"
+          ls -lh ../dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Quiz App ${{ steps.version.outputs.version }}
+          prerelease: ${{ github.event.inputs.prerelease != 'false' }}
+          generate_release_notes: true
+          files: dist/*
+          body: |
+            ## Quiz App ${{ steps.version.outputs.version }}
+
+            Android build produced by the `Android Release` workflow from
+            `${{ github.sha }}`.
+
+            ### Downloads
+            | File | Use |
+            |---|---|
+            | `quiz-app-*-universal.apk` | Sideload on any device. Largest file. |
+            | `quiz-app-*-arm64-v8a.apk` | Most modern phones. Smallest download. |
+            | `quiz-app-*-armeabi-v7a.apk` | Older 32-bit devices. |
+            | `quiz-app-*-x86_64.apk` | Emulators. |
+            | `quiz-app-*.aab` | Play Store upload format. |
+
+            > **These APKs are signed with the debug keystore.** They are fine for
+            > testing and sideloading, but Google Play will reject them. Set up a
+            > release signing config before shipping.
