@@ -6,7 +6,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/question.dart';
 
 class ApiClient {
-  static const String _baseUrl = 'https://opentdb.com/api.php';
+  // Overridable at build time:
+  //   flutter build apk --release --dart-define=QUIZ_API_BASE_URL=...
+  // The default keeps local `flutter run` working with no extra setup.
+  static const String _baseUrl = String.fromEnvironment(
+    'QUIZ_API_BASE_URL',
+    defaultValue: 'https://opentdb.com/api.php',
+  );
   late Dio _dio;
 
   ApiClient({Dio? dio}) {

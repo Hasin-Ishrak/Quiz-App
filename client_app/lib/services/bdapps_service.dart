@@ -4,7 +4,14 @@ import 'package:flutter/foundation.dart';
 class BdAppsService {
   // Local PHP backend (php -S localhost:8000 from bdapps_api_php/)
   //static const String _baseUrl = 'http://localhost:8000/';
-  static const String _baseUrl = 'https://www.bdappsdigitalapps.com/Hasin46/';
+  //
+  // Overridable at build time:
+  //   flutter build apk --release --dart-define=BDAPPS_BASE_URL=...
+  // The default keeps local `flutter run` working with no extra setup.
+  static const String _baseUrl = String.fromEnvironment(
+    'BDAPPS_BASE_URL',
+    defaultValue: 'https://www.bdappsdigitalapps.com/Hasin46/',
+  );
   late Dio _dio;
 
   BdAppsService() {

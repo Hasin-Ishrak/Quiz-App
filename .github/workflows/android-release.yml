@@ -1,19 +1,46 @@
 name: Android Release
 
-# Builds signed-for-testing artifacts and publishes them as a GitHub Release.
+# Builds the release APK and publishes it as the only asset on a GitHub Release.
 #
-# IMPORTANT - these artifacts are NOT Play Store ready.
-# client_app/android/app/build.gradle.kts still has:
+# BUILD-TIME ENVIRONMENT
+# ----------------------
+# Values are injected with --dart-define, so they are compiled into the APK.
+# Read them in Dart with String.fromEnvironment, e.g.
 #
-#     release { signingConfig = signingConfigs.getByName("debug") }
+#     static const String _baseUrl = String.fromEnvironment(
+#       'QUIZ_API_BASE_URL',
+#       defaultValue: 'https://opentdb.com/api.php',
+#     );
 #
-# so the release build is signed with the debug keystore. It installs and runs
-# fine for sideloading and QA, but Google Play will reject it. To ship for real,
-# add a proper signing config backed by the repository secrets listed below and
-# delete this notice.
+# Provide them either way (BUILD_ENV wins if both are set):
 #
-# Trigger by pushing a tag:      git tag v1.0.0 && git push origin v1.0.0
-# or from the Actions tab:       Run workflow -> enter a version
+#   1. Repository secret BUILD_ENV - a JSON object, the flexible option.
+#      Settings -> Secrets and variables -> Actions -> New repository secret
+#
+#          {
+#            "QUIZ_API_BASE_URL": "https://opentdb.com/api.php",
+#            "BDAPPS_BASE_URL":   "https://www.bdappsdigitalapps.com/Hasin46/"
+#          }
+#
+#      Add new keys here without ever touching this workflow again.
+#
+#   2. Individual repository variables/secrets, wired in the build step below.
+#
+# If neither is set the build still succeeds and every value falls back to the
+# defaultValue baked into the Dart source.
+#
+# NOTE: --dart-define values are embedded in the shipped binary and can be
+# extracted from it. Use this for config (URLs, flavours, feature flags), never
+# for anything that must stay private, like a signing key or a server secret.
+#
+# SIGNING
+# -------
+# android/app/build.gradle.kts still has
+# `release { signingConfig = signingConfigs.getByName("debug") }`, so this APK
+# is debug-signed: fine to sideload, rejected by Google Play.
+#
+# Trigger: push a tag `git tag v1.0.0 && git push origin v1.0.0`
+#          or Actions -> Android Release -> Run workflow
 
 on:
   push:
@@ -39,7 +66,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write # required to create the release and upload assets
+  contents: write # required to create the release and upload the APK
 
 defaults:
   run:
@@ -47,7 +74,7 @@ defaults:
 
 jobs:
   release:
-    name: Build and publish
+    name: Build and publish APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -100,31 +127,54 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
-      # Universal APK for sideloading, per-ABI APKs to cut download size,
-      # and an App Bundle for the Play Store track once real signing is set up.
-      - name: Build universal APK
-        run: flutter build apk --release
-
-      - name: Build per-ABI APKs
-        run: flutter build apk --release --split-per-abi
-
-      - name: Build App Bundle
-        run: flutter build appbundle --release
-
-      - name: Stage artifacts
-        id: stage
+      # Assemble the --dart-define arguments. Anything absent is simply omitted
+      # so the Dart-side defaultValue survives; an empty secret must never be
+      # allowed to overwrite a good default with "".
+      - name: Prepare build environment
+        id: env
+        env:
+          BUILD_ENV: ${{ secrets.BUILD_ENV }}
+          QUIZ_API_BASE_URL: ${{ vars.QUIZ_API_BASE_URL }}
+          BDAPPS_BASE_URL: ${{ vars.BDAPPS_BASE_URL }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          mkdir -p ../dist
-          cp build/app/outputs/flutter-apk/app-release.apk \
-             "../dist/quiz-app-${VERSION}-universal.apk"
-          for abi in armeabi-v7a arm64-v8a x86_64; do
-            src="build/app/outputs/flutter-apk/app-${abi}-release.apk"
-            [ -f "$src" ] && cp "$src" "../dist/quiz-app-${VERSION}-${abi}.apk"
-          done
-          cp build/app/outputs/bundle/release/app-release.aab \
-             "../dist/quiz-app-${VERSION}.aab"
-          ls -lh ../dist
+          if [ -n "$BUILD_ENV" ]; then
+            printf '%s' "$BUILD_ENV" > dart_defines.json
+            if ! jq empty dart_defines.json 2>/dev/null; then
+              echo "::error::secret BUILD_ENV is not valid JSON"
+              exit 1
+            fi
+            echo "Injecting $(jq 'keys | length' dart_defines.json) value(s) from BUILD_ENV:"
+            jq -r 'keys[] | "  - " + .' dart_defines.json   # names only, never values
+            echo "args=--dart-define-from-file=dart_defines.json" >> "$GITHUB_OUTPUT"
+          else
+            ARGS=""
+            for name in QUIZ_API_BASE_URL BDAPPS_BASE_URL; do
+              value="${!name}"
+              if [ -n "$value" ]; then
+                ARGS="$ARGS --dart-define=$name=$value"
+                echo "  - $name (from repository variable)"
+              fi
+            done
+            if [ -z "$ARGS" ]; then
+              echo "No build environment configured; using the defaults compiled into the Dart source."
+            fi
+            echo "args=$ARGS" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build release APK
+        run: flutter build apk --release ${{ steps.env.outputs.args }}
+
+      - name: Rename APK
+        id: apk
+        run: |
+          NAME="quiz-app-${{ steps.version.outputs.version }}.apk"
+          mv build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/${NAME}"
+          echo "path=client_app/build/app/outputs/flutter-apk/${NAME}" >> "$GITHUB_OUTPUT"
+          ls -lh "build/app/outputs/flutter-apk/${NAME}"
+
+      - name: Remove build environment file
+        if: always()
+        run: rm -f dart_defines.json
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -133,22 +183,12 @@ jobs:
           name: Quiz App ${{ steps.version.outputs.version }}
           prerelease: ${{ github.event.inputs.prerelease != 'false' }}
           generate_release_notes: true
-          files: dist/*
+          files: ${{ steps.apk.outputs.path }}
           body: |
             ## Quiz App ${{ steps.version.outputs.version }}
 
-            Android build produced by the `Android Release` workflow from
-            `${{ github.sha }}`.
+            Release APK built by the `Android Release` workflow from `${{ github.sha }}`
+            with build-time configuration injected via `--dart-define`.
 
-            ### Downloads
-            | File | Use |
-            |---|---|
-            | `quiz-app-*-universal.apk` | Sideload on any device. Largest file. |
-            | `quiz-app-*-arm64-v8a.apk` | Most modern phones. Smallest download. |
-            | `quiz-app-*-armeabi-v7a.apk` | Older 32-bit devices. |
-            | `quiz-app-*-x86_64.apk` | Emulators. |
-            | `quiz-app-*.aab` | Play Store upload format. |
-
-            > **These APKs are signed with the debug keystore.** They are fine for
-            > testing and sideloading, but Google Play will reject them. Set up a
-            > release signing config before shipping.
+            > Signed with the debug keystore - fine to sideload, rejected by Google Play.
+            > Add a release signing config before shipping.
